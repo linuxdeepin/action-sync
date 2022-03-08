@@ -41,7 +41,7 @@ func main() {
 	flag.StringVar(&message, "message", "chore: Sync by .github", "commit message")
 	flag.StringVar(&files, "files", "", "config files, separated by spaces")
 	flag.BoolVar(&dryRun, "dryRun", false, "dry run")
-	flag.BoolVar(&autoMerge, "autoMerge", false, "auto merge")
+	flag.BoolVar(&autoMerge, "autoMerge", true, "auto merge")
 	flag.Parse()
 	if appID == 0 || installationID == 0 || len(message) == 0 || len(files) == 0 {
 		flag.PrintDefaults()
@@ -86,7 +86,7 @@ func main() {
 				log.Fatal(err)
 			}
 			// match branch
-			if config.Branches == nil {
+			if len(config.Branches) == 0 {
 				for i := range branches {
 					syncBranches = append(syncBranches, *branches[i].Name)
 				}
@@ -108,8 +108,9 @@ func main() {
 			for i := range syncBranches {
 				key := fmt.Sprintf("%s/%s/%s", owner, repo, syncBranches[i])
 				var branch Branch
-				if _, ok := cleanupBranch[key]; !ok {
-					tempBranch := fmt.Sprintf("%s/sync-file/%d", syncBranches[i], time.Now().Unix())
+				branch, ok := cleanupBranch[key]
+				if !ok {
+					tempBranch := fmt.Sprintf("sync/t_%d/%s", time.Now().Unix(), syncBranches[i])
 					tempRef := fmt.Sprintf("refs/heads/%s", tempBranch)
 					ref, _, err := client.Git.GetRef(ctx, owner, repo, fmt.Sprintf("heads/%s", syncBranches[i]))
 					if err != nil {
@@ -141,7 +142,7 @@ func main() {
 			pr, _, err := client.PullRequests.Create(ctx, branch.Owner, branch.Repo, &github.NewPullRequest{
 				Title:               &message,
 				Head:                github.String(branch2Ref(branch.Branch)),
-				Base:                github.String(branch2Ref(branch.Branch)),
+				Base:                github.String(branch2Ref(branch.Base)),
 				MaintainerCanModify: github.Bool(true),
 			})
 			if err != nil {
@@ -184,7 +185,6 @@ func split(dest string) (owner, repo, path string, err error) {
 }
 
 func sendFile(ctx context.Context, client *github.Client, localFile string, owner, repo, path, message string, branch string) (_changed bool, _err error) {
-
 	fileContent, _, resp, err := client.Repositories.GetContents(
 		ctx, owner, repo, path,
 		&github.RepositoryContentGetOptions{Ref: branch},
